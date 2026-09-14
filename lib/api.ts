@@ -7,6 +7,7 @@ import { SiteSettings } from "../types";
 dotenv.config();
 
 const CACHE_FILE = path.resolve(".cache/sidebarLinks.json");
+const CONTENTFUL_TIMEOUT_MS = 10_000;
 
 const ARTICLE_GRAPHQL_FIELDS = `
 sys {
@@ -71,28 +72,75 @@ kbAppCategory {
 }
 `;
 
-/**
- *
- * @param query - the GraphQL query to be used by the API
- * @param preview - if true, it tells the app to request the content from preview API
- * @returns
- */
-async function fetchGraphQL(query, preview = false) {
-  return fetch(
-    `https://graphql.contentful.com/content/v1/spaces/${process.env.CONTENTFUL_SPACE_ID}`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${
-          preview
-            ? process.env.CONTENTFUL_PREVIEW_ACCESS_TOKEN
-            : process.env.CONTENTFUL_ACCESS_TOKEN
-        }`,
+type GraphQLVariables = Record<string, string | number | boolean | null>;
+
+function getContentfulConfig(preview: boolean) {
+  const spaceId = process.env.CONTENTFUL_SPACE_ID?.trim();
+  const accessToken = process.env.CONTENTFUL_ACCESS_TOKEN?.trim();
+  const previewAccessToken = process.env.CONTENTFUL_PREVIEW_ACCESS_TOKEN?.trim();
+  const token = preview ? previewAccessToken : accessToken;
+
+  if (!spaceId || !token) {
+    throw new Error("CONTENTFUL_NOT_CONFIGURED");
+  }
+
+  return { spaceId, token };
+}
+
+async function fetchGraphQL(
+  query: string,
+  preview = false,
+  variables: GraphQLVariables = {},
+) {
+  const { spaceId, token } = getContentfulConfig(preview);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), CONTENTFUL_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(
+      `https://graphql.contentful.com/content/v1/spaces/${spaceId}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ query, variables }),
+        signal: controller.signal,
       },
-      body: JSON.stringify({ query }),
+    );
+
+    if (!response.ok) {
+      throw new Error("CONTENTFUL_REQUEST_FAILED");
     }
-  ).then((response) => response.json());
+
+    let payload: any;
+    try {
+      payload = await response.json();
+    } catch {
+      throw new Error("CONTENTFUL_REQUEST_FAILED");
+    }
+
+    if (Array.isArray(payload?.errors) && payload.errors.length > 0) {
+      throw new Error("CONTENTFUL_GRAPHQL_ERROR");
+    }
+
+    return payload;
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      [
+        "CONTENTFUL_NOT_CONFIGURED",
+        "CONTENTFUL_REQUEST_FAILED",
+        "CONTENTFUL_GRAPHQL_ERROR",
+      ].includes(error.message)
+    ) {
+      throw error;
+    }
+    throw new Error("CONTENTFUL_REQUEST_FAILED");
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function extractArticle(fetchResponse) {
@@ -105,14 +153,15 @@ function extractArticleEntries(fetchResponse) {
 
 export async function getSingleArticleBySlug(slug, preview = false) {
   const entry = await fetchGraphQL(
-    `query {
-      kbAppArticleCollection(where: { slug: "${slug}" }, preview: ${preview}, limit: 1) {
+    `query ArticleBySlug($slug: String!) {
+      kbAppArticleCollection(where: { slug: $slug }, preview: ${preview}, limit: 1) {
         items {
           ${ARTICLE_GRAPHQL_FIELDS}
         }
       }
     }`,
-    preview
+    preview,
+    { slug },
   );
 
   return extractArticle(entry);
@@ -129,7 +178,7 @@ export async function getSiteSettings(preview = false): Promise<SiteSettings> {
         }
       }
     }`,
-    preview
+    preview,
   );
 
   return response?.data?.kbAppSiteSettingsCollection?.items?.[0];
@@ -138,11 +187,12 @@ export async function getSiteSettings(preview = false): Promise<SiteSettings> {
 export async function getAllCategories(preview = false) {
   let sidebarLinks;
 
-  try {
-    sidebarLinks = JSON.parse(await fs.readFile(CACHE_FILE, "utf8"));
-  } catch (_) {
-    console.log("Cache not initialized");
-    // move on
+  if (!preview) {
+    try {
+      sidebarLinks = JSON.parse(await fs.readFile(CACHE_FILE, "utf8"));
+    } catch (_) {
+      console.log("Cache not initialized");
+    }
   }
 
   if (!sidebarLinks) {
@@ -170,7 +220,7 @@ export async function getAllCategories(preview = false) {
         }
       }
     }`,
-      preview
+      preview,
     );
 
     const data = entries?.data?.kbAppCategoryCollection?.items;
@@ -178,33 +228,30 @@ export async function getAllCategories(preview = false) {
     if (data) {
       sidebarLinks = data
         .sort((a, b) => b.name < a.name)
-        .reduce((categories, path) => {
-          // const category = path.kbAppCategory?.slug ?? "unassigned";
-
+        .reduce((categories, categoryEntry) => {
           const category = {
-            description: path.previewDescription,
+            description: categoryEntry.previewDescription,
             links: [],
-            slug: `/${path.slug}`,
-            title: path.name,
+            slug: `/${categoryEntry.slug}`,
+            title: categoryEntry.name,
           };
 
-          category.links = path.linkedFrom?.kbAppArticleCollection?.items.map(
-            (article) => {
-              return {
-                slug: `/${path.slug}/${article.slug}`,
-                title: article.title,
-              };
-            }
+          category.links = categoryEntry.linkedFrom?.kbAppArticleCollection?.items.map(
+            (article) => ({
+              slug: `/${categoryEntry.slug}/${article.slug}`,
+              title: article.title,
+            }),
           );
 
           categories.push(category);
-
           return categories;
         }, []);
 
-      await fs
-        .writeFile(CACHE_FILE, JSON.stringify(sidebarLinks), "utf8")
-        .catch(() => {});
+      if (!preview) {
+        await fs
+          .writeFile(CACHE_FILE, JSON.stringify(sidebarLinks), "utf8")
+          .catch(() => {});
+      }
     }
   }
 
@@ -232,7 +279,7 @@ export async function getAllArticles(preview = false) {
         }
       }
     }`,
-    preview
+    preview,
   );
 
   const articleEntries = extractArticleEntries(entries);
