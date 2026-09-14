@@ -7,7 +7,7 @@ const api = await readFile(new URL('../lib/api.ts', import.meta.url), 'utf8')
 test('article slug is passed as a GraphQL variable instead of query interpolation', () => {
   assert.match(api, /\$slug:\s*String!/)
   assert.match(api, /slug:\s*\$slug/)
-  assert.match(api, /variables:\s*\{\s*slug/)
+  assert.match(api, /preview,\s*\{\s*slug\s*\}/)
   assert.doesNotMatch(api, /slug:\s*"\$\{slug\}"/)
 })
 
