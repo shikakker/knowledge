@@ -5,6 +5,7 @@ import test from 'node:test'
 const packageJson = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
 const home = await readFile(new URL('../pages/index.tsx', import.meta.url), 'utf8')
 const articlePage = await readFile(new URL('../pages/[...slug].tsx', import.meta.url), 'utf8')
+const globalStyles = await readFile(new URL('../components/GlobalStyles.tsx', import.meta.url), 'utf8')
 
 test('production build does not execute Contentful indexing as a package lifecycle side effect', () => {
   assert.equal(packageJson.scripts.build, 'next build')
@@ -25,4 +26,10 @@ test('article routes do not require Contentful during build and distinguish unav
   assert.match(articlePage, /statusCode\s*=\s*503/)
   assert.match(articlePage, /notFound:\s*true/)
   assert.doesNotMatch(articlePage, /getStaticPaths/)
+})
+
+test('global layout does not force desktop width on mobile viewports', () => {
+  assert.doesNotMatch(globalStyles, /min-width:\s*1280px/)
+  assert.match(globalStyles, /max-width:\s*100%/)
+  assert.match(globalStyles, /overflow-wrap:\s*anywhere/)
 })
