@@ -32,6 +32,21 @@ jobs:
           yarn add next@15.5.24 --exact
           yarn add --dev eslint@8.57.1 eslint-config-next@15.5.24 @next/eslint-plugin-next@15.5.24 --exact
 
+      - name: Patch Next.js PostCSS transitive security floor
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const packagePath = 'package.json';
+          const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
+          pkg.resolutions = {
+            ...(pkg.resolutions || {}),
+            'next/postcss': '8.5.23'
+          };
+          fs.writeFileSync(packagePath, `${JSON.stringify(pkg, null, 2)}\n`);
+          NODE
+          yarn install
+
       - name: Migrate topbar link to current Next semantics
         shell: bash
         run: |
