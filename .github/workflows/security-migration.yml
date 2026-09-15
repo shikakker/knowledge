@@ -1,0 +1,68 @@
+name: Security migration
+
+on:
+  push:
+    branches:
+      - portfolio-improvements-2026-08
+
+permissions:
+  contents: write
+
+jobs:
+  migrate-next:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: portfolio-improvements-2026-08
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+
+      - name: Install current lockfile
+        run: yarn install --frozen-lockfile
+
+      - name: Upgrade Next.js to patched security floor
+        run: yarn add next@15.5.24 --exact
+
+      - name: Regression tests
+        run: yarn test
+
+      - name: TypeScript
+        run: yarn typecheck
+
+      - name: Lint
+        run: yarn lint
+
+      - name: Production build
+        run: yarn build
+
+      - name: Audit production dependencies
+        shell: bash
+        run: |
+          set +e
+          yarn audit --groups dependencies --json > yarn-audit.json
+          status=$?
+          set -e
+          if (( status & 24 )); then
+            cat yarn-audit.json
+            exit 1
+          fi
+
+      - name: Commit synchronized manifest and lockfile
+        shell: bash
+        run: |
+          if git diff --quiet -- package.json yarn.lock; then
+            echo "No dependency changes to commit"
+            exit 0
+          fi
+          git config user.name "Egor Denisov"
+          git config user.email "designer.egor@ya.ru"
+          git add package.json yarn.lock
+          git commit -m "fix: patch Next.js security boundary"
+          git push origin HEAD:portfolio-improvements-2026-08
