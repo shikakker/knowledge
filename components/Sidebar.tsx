@@ -5,16 +5,21 @@ import { Grid } from "@contentful/f36-components";
 
 import { SidebarSection } from "./SidebarSection";
 import { useRouter } from "next/router";
+import { SCREEN_BREAKPOINT_DESKTOP } from "../utils/getGridStyles";
 
 const styles = {
   nav: css({
-    padding: `${tokens.spacingM} 0`,
+    minWidth: 0,
+    padding: `${tokens.spacingS} ${tokens.spacingM}`,
     overflowY: "auto",
     color: tokens.gray700,
-  }),
-  list: css({
-    padding: 0,
-    listStyle: "none",
+    backgroundColor: tokens.colorWhite,
+    borderBottom: `1px solid ${tokens.gray300}`,
+    [`@media screen and (min-width: ${SCREEN_BREAKPOINT_DESKTOP})`]: {
+      padding: `${tokens.spacingM} 0`,
+      borderBottom: 0,
+      borderRight: `1px solid ${tokens.gray300}`,
+    },
   }),
 };
 

@@ -14,10 +14,8 @@ const styles = {
 
 export function TopbarLogo() {
   return (
-    <Link href="/" passHref>
-      <a className={styles.logoLink} href="/">
-        <Logo />
-      </a>
+    <Link href="/" className={styles.logoLink} aria-label="Knowledge base home">
+      <Logo />
     </Link>
   );
 }

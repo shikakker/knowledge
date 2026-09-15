@@ -1,0 +1,45 @@
+import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
+import test from 'node:test'
+
+const packageJson = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
+const home = await readFile(new URL('../pages/index.tsx', import.meta.url), 'utf8')
+const articlePage = await readFile(new URL('../pages/[...slug].tsx', import.meta.url), 'utf8')
+const globalStyles = await readFile(new URL('../components/GlobalStyles.tsx', import.meta.url), 'utf8')
+const gridStyles = await readFile(new URL('../utils/getGridStyles.ts', import.meta.url), 'utf8')
+const pageContent = await readFile(new URL('../components/PageContent/PageContent.tsx', import.meta.url), 'utf8')
+
+test('production build does not execute Contentful indexing as a package lifecycle side effect', () => {
+  assert.equal(packageJson.scripts.build, 'next build')
+  assert.equal(packageJson.scripts.prebuild, undefined)
+  assert.equal(packageJson.scripts['search:index'], 'ts-node scripts/generate-search-index.ts')
+})
+
+test('home content is resolved at request time with a recoverable provider-unavailable state', () => {
+  assert.match(home, /GetServerSideProps/)
+  assert.match(home, /contentUnavailable/)
+  assert.match(home, /statusCode\s*=\s*503/)
+  assert.doesNotMatch(home, /GetStaticProps/)
+})
+
+test('article routes do not require Contentful during build and distinguish unavailable from not found', () => {
+  assert.match(articlePage, /GetServerSideProps/)
+  assert.match(articlePage, /contentUnavailable/)
+  assert.match(articlePage, /statusCode\s*=\s*503/)
+  assert.match(articlePage, /notFound:\s*true/)
+  assert.doesNotMatch(articlePage, /getStaticPaths/)
+})
+
+test('global layout does not force desktop width on mobile viewports', () => {
+  assert.doesNotMatch(globalStyles, /min-width:\s*1280px/)
+  assert.match(globalStyles, /max-width:\s*100%/)
+  assert.match(globalStyles, /overflow-wrap:\s*anywhere/)
+})
+
+test('primary layout has a single-column mobile flow before the desktop breakpoint', () => {
+  assert.match(gridStyles, /SCREEN_BREAKPOINT_DESKTOP/)
+  assert.match(gridStyles, /gridTemplateColumns:\s*"minmax\(0, 1fr\)"/)
+  assert.match(gridStyles, /"topbar"[\s\S]*"sidebar"[\s\S]*"content"/)
+  assert.match(pageContent, /"header"[\s\S]*"content"[\s\S]*"toc"/)
+  assert.match(home, /className=\{styles\.hero\}/)
+})

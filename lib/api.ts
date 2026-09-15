@@ -1,12 +1,14 @@
-import fs from "node:fs/promises";
-import path from "node:path";
 import fetch from "isomorphic-unfetch";
 import dotenv from "dotenv-flow";
 import { SiteSettings } from "../types";
 
 dotenv.config();
 
-const CACHE_FILE = path.resolve(".cache/sidebarLinks.json");
+const CONTENTFUL_TIMEOUT_MS = 10_000;
+const CONTENT_CACHE_TTL_MS = 5 * 60 * 1000;
+
+let cachedSidebarLinks: any[] | undefined;
+let cachedSidebarLinksExpiresAt = 0;
 
 const ARTICLE_GRAPHQL_FIELDS = `
 sys {
@@ -71,48 +73,96 @@ kbAppCategory {
 }
 `;
 
-/**
- *
- * @param query - the GraphQL query to be used by the API
- * @param preview - if true, it tells the app to request the content from preview API
- * @returns
- */
-async function fetchGraphQL(query, preview = false) {
-  return fetch(
-    `https://graphql.contentful.com/content/v1/spaces/${process.env.CONTENTFUL_SPACE_ID}`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${
-          preview
-            ? process.env.CONTENTFUL_PREVIEW_ACCESS_TOKEN
-            : process.env.CONTENTFUL_ACCESS_TOKEN
-        }`,
-      },
-      body: JSON.stringify({ query }),
-    }
-  ).then((response) => response.json());
+type GraphQLVariables = Record<string, string | number | boolean | null>;
+
+function getContentfulConfig(preview: boolean) {
+  const spaceId = process.env.CONTENTFUL_SPACE_ID?.trim();
+  const accessToken = process.env.CONTENTFUL_ACCESS_TOKEN?.trim();
+  const previewAccessToken = process.env.CONTENTFUL_PREVIEW_ACCESS_TOKEN?.trim();
+  const token = preview ? previewAccessToken : accessToken;
+
+  if (!spaceId || !token) {
+    throw new Error("CONTENTFUL_NOT_CONFIGURED");
+  }
+
+  return { spaceId, token };
 }
 
-function extractArticle(fetchResponse) {
+async function fetchGraphQL(
+  query: string,
+  preview = false,
+  variables: GraphQLVariables = {},
+) {
+  const { spaceId, token } = getContentfulConfig(preview);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), CONTENTFUL_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(
+      `https://graphql.contentful.com/content/v1/spaces/${spaceId}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ query, variables }),
+        signal: controller.signal,
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error("CONTENTFUL_REQUEST_FAILED");
+    }
+
+    let payload: any;
+    try {
+      payload = await response.json();
+    } catch {
+      throw new Error("CONTENTFUL_REQUEST_FAILED");
+    }
+
+    if (Array.isArray(payload?.errors) && payload.errors.length > 0) {
+      throw new Error("CONTENTFUL_GRAPHQL_ERROR");
+    }
+
+    return payload;
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      [
+        "CONTENTFUL_NOT_CONFIGURED",
+        "CONTENTFUL_REQUEST_FAILED",
+        "CONTENTFUL_GRAPHQL_ERROR",
+      ].includes(error.message)
+    ) {
+      throw error;
+    }
+    throw new Error("CONTENTFUL_REQUEST_FAILED");
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function extractArticle(fetchResponse: any) {
   return fetchResponse?.data?.kbAppArticleCollection?.items?.[0];
 }
 
-function extractArticleEntries(fetchResponse) {
+function extractArticleEntries(fetchResponse: any) {
   return fetchResponse?.data?.kbAppArticleCollection?.items;
 }
 
-export async function getSingleArticleBySlug(slug, preview = false) {
+export async function getSingleArticleBySlug(slug: string, preview = false) {
   const entry = await fetchGraphQL(
-    `query {
-      kbAppArticleCollection(where: { slug: "${slug}" }, preview: ${preview}, limit: 1) {
+    `query ArticleBySlug($slug: String!) {
+      kbAppArticleCollection(where: { slug: $slug }, preview: ${preview}, limit: 1) {
         items {
           ${ARTICLE_GRAPHQL_FIELDS}
         }
       }
     }`,
-    preview
+    preview,
+    { slug },
   );
 
   return extractArticle(entry);
@@ -129,25 +179,27 @@ export async function getSiteSettings(preview = false): Promise<SiteSettings> {
         }
       }
     }`,
-    preview
+    preview,
   );
 
-  return response?.data?.kbAppSiteSettingsCollection?.items?.[0];
+  const settings = response?.data?.kbAppSiteSettingsCollection?.items?.[0];
+  if (!settings) {
+    throw new Error("CONTENTFUL_EMPTY_RESPONSE");
+  }
+  return settings;
 }
 
 export async function getAllCategories(preview = false) {
-  let sidebarLinks;
-
-  try {
-    sidebarLinks = JSON.parse(await fs.readFile(CACHE_FILE, "utf8"));
-  } catch (_) {
-    console.log("Cache not initialized");
-    // move on
+  if (
+    !preview &&
+    cachedSidebarLinks &&
+    Date.now() < cachedSidebarLinksExpiresAt
+  ) {
+    return cachedSidebarLinks;
   }
 
-  if (!sidebarLinks) {
-    const entries = await fetchGraphQL(
-      `query {
+  const entries = await fetchGraphQL(
+    `query {
       kbAppCategoryCollection(where: { slug_exists: true }) {
         items {
           slug
@@ -170,42 +222,32 @@ export async function getAllCategories(preview = false) {
         }
       }
     }`,
-      preview
-    );
+    preview,
+  );
 
-    const data = entries?.data?.kbAppCategoryCollection?.items;
+  const data = entries?.data?.kbAppCategoryCollection?.items;
+  if (!Array.isArray(data)) {
+    throw new Error("CONTENTFUL_EMPTY_RESPONSE");
+  }
 
-    if (data) {
-      sidebarLinks = data
-        .sort((a, b) => b.name < a.name)
-        .reduce((categories, path) => {
-          // const category = path.kbAppCategory?.slug ?? "unassigned";
+  const sidebarLinks = data
+    .filter((entry) => entry?.slug && entry?.name)
+    .sort((a, b) => String(a.name).localeCompare(String(b.name)))
+    .map((categoryEntry) => ({
+      description: categoryEntry.previewDescription,
+      links: (categoryEntry.linkedFrom?.kbAppArticleCollection?.items ?? [])
+        .filter((article) => article?.slug && article?.title)
+        .map((article) => ({
+          slug: `/${categoryEntry.slug}/${article.slug}`,
+          title: article.title,
+        })),
+      slug: `/${categoryEntry.slug}`,
+      title: categoryEntry.name,
+    }));
 
-          const category = {
-            description: path.previewDescription,
-            links: [],
-            slug: `/${path.slug}`,
-            title: path.name,
-          };
-
-          category.links = path.linkedFrom?.kbAppArticleCollection?.items.map(
-            (article) => {
-              return {
-                slug: `/${path.slug}/${article.slug}`,
-                title: article.title,
-              };
-            }
-          );
-
-          categories.push(category);
-
-          return categories;
-        }, []);
-
-      await fs
-        .writeFile(CACHE_FILE, JSON.stringify(sidebarLinks), "utf8")
-        .catch(() => {});
-    }
+  if (!preview) {
+    cachedSidebarLinks = sidebarLinks;
+    cachedSidebarLinksExpiresAt = Date.now() + CONTENT_CACHE_TTL_MS;
   }
 
   return sidebarLinks;
@@ -214,7 +256,7 @@ export async function getAllCategories(preview = false) {
 export async function getAllArticles(preview = false) {
   const entries = await fetchGraphQL(
     `query {
-      kbAppArticleCollection(where: { slug_exists: true }) {
+      kbAppArticleCollection(where: { slug_exists: true }, preview: ${preview}) {
         items {
           slug
           sys {
@@ -232,14 +274,38 @@ export async function getAllArticles(preview = false) {
         }
       }
     }`,
-    preview
+    preview,
   );
 
   const articleEntries = extractArticleEntries(entries);
-
-  if (!articleEntries) {
-    throw new Error("Could not fetch any entries from Contentful");
+  if (!Array.isArray(articleEntries)) {
+    throw new Error("CONTENTFUL_EMPTY_RESPONSE");
   }
+  return articleEntries;
+}
 
+export async function getAllSearchArticles(preview = false) {
+  const entries = await fetchGraphQL(
+    `query {
+      kbAppArticleCollection(where: { slug_exists: true }, preview: ${preview}) {
+        items {
+          slug
+          title
+          body {
+            json
+          }
+          kbAppCategory {
+            slug
+          }
+        }
+      }
+    }`,
+    preview,
+  );
+
+  const articleEntries = extractArticleEntries(entries);
+  if (!Array.isArray(articleEntries)) {
+    throw new Error("CONTENTFUL_EMPTY_RESPONSE");
+  }
   return articleEntries;
 }

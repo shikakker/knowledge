@@ -6,8 +6,12 @@
     "dev": "next dev",
     "build": "next build",
     "build:prod": "yarn ts-node scripts/generate-public-files && next build",
-    "prebuild": "yarn ts-node scripts/generate-search-index",
-    "start": "next start"
+    "search:index": "ts-node scripts/generate-search-index.ts",
+    "start": "next start",
+    "test": "node --test tests/*.test.mjs",
+    "typecheck": "tsc --noEmit",
+    "lint": "next lint --max-warnings=0",
+    "check": "yarn test && yarn typecheck && yarn lint && yarn build"
   },
   "dependencies": {
     "@contentful/f36-components": "^4.10.1",
@@ -25,7 +29,7 @@
     "github-slugger": "^1.4.0",
     "isomorphic-unfetch": "^3.1.0",
     "lunr": "^2.3.9",
-    "next": "^12.1.6",
+    "next": "15.5.24",
     "prism-react-renderer": "^1.3.3",
     "react": "18.2.0",
     "react-docgen-typescript": "^2.2.2",
@@ -35,15 +39,20 @@
     "@babel/core": "^7.18.5",
     "@contentful/rich-text-types": "^15.11.1",
     "@emotion/babel-preset-css-prop": "^10.2.1",
-    "@next/eslint-plugin-next": "^12.1.1",
+    "@next/eslint-plugin-next": "15.5.24",
     "@types/lunr": "^2.3.4",
     "@types/node": "^16.0.0",
     "@types/react": "^18.0.13",
     "@types/react-dom": "^18.0.5",
     "babel-plugin-emotion": "^10.0.33",
+    "eslint": "8.57.1",
+    "eslint-config-next": "15.5.24",
     "prettier": "^2.5.1",
     "ts-node": "^10.8.1",
     "typescript": "^4.7.3",
     "wait-on": "^6.0.0"
+  },
+  "resolutions": {
+    "next/postcss": "8.5.23"
   }
 }

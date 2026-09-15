@@ -1,103 +1,112 @@
-# A statically generated knowledgebase example using Next.js and Contentful
+# Knowledge — Contentful Knowledge Base
 
-This example showcases Next.js's [Static Generation](https://nextjs.org/docs/basic-features/pages) feature using [Contentful](https://www.contentful.com/) as the data source.
+A server-rendered knowledge-base frontend built with Next.js, Contentful and Contentful Forma 36. The repository began as a Contentful/Next.js example and is maintained here as a hardened CMS delivery reference rather than as an independently invented CMS product.
 
-## Deploy your own
+## What it does
 
-Using the Deploy Button below, you'll deploy the Next.js project as well as connect it to your Contentful space using the Vercel Contentful Integration.
+- renders the knowledge-base home and article routes from Contentful;
+- builds sidebar/category navigation from Contentful entries;
+- renders Contentful rich text, code blocks, tables and allowlisted Contentful assets;
+- provides bounded full-text article search with Lunr;
+- degrades to explicit HTTP 503 recovery states when Contentful is unavailable instead of failing the application build or exposing raw provider errors.
 
-[![Deploy with Vercel](https://vqercel.com/button)](https://vercel.com/new/git/external?repository-url=https%3A%2F%2Fgithub.com%2Fvercel%2Fnext.js%2Ftree%2Fcanary%2Fexamples%2Fcms-contentful&project-name=nextjs-contentful-blog&repository-name=nextjs-contentful-blog&demo-title=Next.js+Blog&demo-description=Static+blog+with+multiple+authors+using+Preview+Mode&demo-url=https%3A%2F%2Fnext-blog-contentful.vercel.app%2F&demo-image=https%3A%2F%2Fassets.vercel.com%2Fimage%2Fupload%2Fv1625705016%2Ffront%2Fexamples%2FCleanShot_2021-07-07_at_19.43.15_2x.png&integration-ids=oac_aZtAZpDfT1lX3zrnWy7KT9VA&env=CONTENTFUL_PREVIEW_SECRET&envDescription=Any%20URL%20friendly%20value%20to%20secure%20Preview%20Mode)
+## Runtime architecture
 
-## How to use
+Content is fetched server-side from Contentful at request time. The normal `yarn build` does **not** contact Contentful and does not generate or mutate CMS data.
 
-### Step 1. Set up environment variables
+Search is also runtime-owned:
 
-From your contentful space, go to **Settings > API keys**. There will be an example Content delivery / preview token - you can use these API keys. (You may also create a new key.)
+- `/api/search` is POST-only;
+- queries are required and capped at 100 characters;
+- results are capped at 20;
+- searchable Contentful article data and the Lunr index are cached in process memory for five minutes;
+- the runtime does not depend on a writable filesystem cache;
+- provider/index failures return a controlled `503 SEARCH_UNAVAILABLE` response.
 
-Next, copy the `.env.local.example` file in this directory to `.env.local` (which will be ignored by Git):
+The optional historical generation scripts remain explicit commands. `yarn search:index` may contact Contentful and should only be run intentionally in a configured environment.
+
+## Stack
+
+- Next.js `15.5.24` — Pages Router
+- React 18.2
+- TypeScript
+- Contentful GraphQL API
+- Contentful Forma 36
+- Lunr
+- Yarn 1 / `yarn.lock`
+- Node.js 22 in CI
+
+The production dependency graph pins the vulnerable Next.js line to `15.5.24` and resolves Next's transitive PostCSS dependency to `8.5.23`. CI blocks high/critical production advisories. Moderate advisories remain in the historical Forma 36 / Emotion dependency tree and are tracked as modernization debt rather than hidden.
+
+## Local setup
 
 ```bash
+yarn install --frozen-lockfile
 cp .env.local.example .env.local
 ```
 
-Then set each variable on `.env.local`:
-
-- `CONTENTFUL_SPACE_ID` should be the **Space ID** field of your API Key
-- `CONTENTFUL_ACCESS_TOKEN` should be the **[Content Delivery API](https://www.contentful.com/developers/docs/references/content-delivery-api/) - access token** field of your API key
-- `CONTENTFUL_PREVIEW_ACCESS_TOKEN` should be the **[Content Preview API](https://www.contentful.com/developers/docs/references/content-preview-api/) - access token** field of your API key
-- `CONTENTFUL_PREVIEW_SECRET` should be any value you want. It must be URL friendly as the dashboard will send it as a query parameter to enable preview mode
-
-Your `.env.local` file should look like this:
+Configure:
 
 ```bash
 CONTENTFUL_SPACE_ID=...
 CONTENTFUL_ACCESS_TOKEN=...
 CONTENTFUL_PREVIEW_ACCESS_TOKEN=...
-CONTENTFUL_PREVIEW_SECRET=...
 ```
 
-### Step 2. Run the project locally
+`CONTENTFUL_SPACE_ID` and `CONTENTFUL_ACCESS_TOKEN` are required for normal provider-backed rendering. The preview token is only needed for preview-aware code paths.
+
+Start development:
 
 ```bash
-npm install
-
-# or
-
-yarn install
+yarn dev
 ```
 
+Then open `http://localhost:3000`.
+
+## Verification
+
 ```bash
-npm build
-
-# or
-
+yarn test
+yarn typecheck
+yarn lint
 yarn build
 ```
 
-```bash
-npm start
+The GitHub Actions `Quality` workflow additionally performs a frozen install and blocks high/critical production dependency advisories before running tests, typecheck, lint and the production build.
 
-# or
+Current regression coverage includes:
 
-yarn start
-```
+- Contentful configuration and timeout/error boundaries;
+- GraphQL variable handling;
+- non-mutating production build behavior;
+- runtime CMS failure recovery for home/article routes;
+- bounded, method-safe search API behavior;
+- no writable filesystem dependency or per-result Contentful N+1 search calls;
+- client-side search failure handling and literal-text highlighting.
 
-Your knowledgebase project should be up and running on [http://localhost:3000](http://localhost:3000)! If it doesn't work, post on [GitHub discussions](we need to maybe have a open discussions over here).
+## Deployment
 
-### Step 3. Try preview mode
+The canonical Vercel project currently linked to this repository is `knowledge`.
 
-In your Contentful space, go to **Settings > Content preview** and add a new content preview for development.
+A Vercel build no longer requires Contentful to be reachable because CMS reads moved out of the build phase. A fully provider-backed production smoke still requires valid Contentful environment configuration in the target deployment.
 
-The **Name** field may be anything, like `Development`. Then, under **Content preview URLs**, check **Post** and set its value to:
+For release verification, check:
 
-```
-http://localhost:3000/api/preview?secret=<CONTENTFUL_PREVIEW_SECRET>&slug={entry.fields.slug}
-```
+1. `/` renders content or the controlled unavailable state;
+2. a real article route renders or distinguishes a missing article from provider unavailability;
+3. search accepts a normal query, handles special characters as text, and recovers from provider failure;
+4. runtime logs contain no unexpected 5xx/provider stack traces.
 
-Replace `<CONTENTFUL_PREVIEW_SECRET>` with its respective value in `.env.local`.
+## Security and reliability notes
 
-Once saved, go to one of the posts you've created and:
+- Contentful credentials are server-only and are never committed.
+- Contentful requests are timeout-bounded and non-success/GraphQL-error responses fail closed.
+- Contentful asset rendering only accepts HTTPS URLs from known Contentful asset hosts.
+- Search responses and CMS failure states are normalized; upstream exception text is not returned to clients.
+- Production dependency audit is part of CI.
 
-- **Update the title**. For example, you can add `[Draft]` in front of the title.
-- The state of the post will switch to **CHANGED** automatically. **Do not** publish it. By doing this, the post will be in draft state.
-- In the sidebar, you will see the **Open preview** button. Click on it!
+## Provenance / portfolio boundary
 
-You will now be able to see the updated title. To exit preview mode, you can click on **Click here to exit preview mode** at the top of the page.
+This repository is derived from a Contentful/Next.js knowledge-base example. Portfolio claims should focus on the verified hardening work in this fork: runtime CMS isolation, search redesign, failure recovery, dependency/security modernization and deterministic delivery. It should not be presented as an original Contentful or Next.js product.
 
-### Step 4. Deploy on Vercel
-
-Your project was already deployed to [Vercel](https://vercel.com). You can check the ([Documentation](https://nextjs.org/docs/deployment)) and deploy again from the platform.
-
-#### Deploy Your Local Project
-
-To deploy your local project to Vercel, push it to GitHub/GitLab/Bitbucket and [import to Vercel](https://vercel.com/new?utm_source=github&utm_medium=readme&utm_campaign=next-example).
-
-**Important**: When you import your project on Vercel, make sure to click on **Environment Variables** and check if they match your `.env.local` file.
-
-### Step 5. Setup the webhook in Contentful
-
-Log in to Contentful and set up a [webhook](https://app.contentful.com/spaces/<YOUR_SPACE_ID>/settings/webhooks). Webhooks are HTTP callbacks which can be used to send notifications when data in Contentful is changed, allowing external systems to react to changes to do things such as trigger a website rebuild or send a notification to a chat application. This will allow to deploy this website to Vercel every time you will make any changes to your content.
-
-[Read more about webhooks](https://www.contentful.com/developers/docs/concepts/webhooks/) and [Webhook management API](https://www.contentful.com/developers/docs/references/content-management-api/#/reference/webhooks)
-
-## Adding syntax highligting for different programming languages
+See `PRODUCT_COMPLETION_STATUS.md` for current T01–T10 / I01–I10 / F01–F10 status and hosted verification evidence.
