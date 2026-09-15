@@ -14,12 +14,14 @@
 
 - Frozen install: PASS on Node.js 22
 - Production high/critical dependency audit: PASS
-- Regression tests: PASS — 10/10
+- Regression tests: PASS — 11/11
 - TypeScript: PASS
 - Lint: PASS
 - Production build: PASS without Contentful credentials
-- Last permanent Quality evidence before this docs-only status update: run `34913919567`, head `95e3e4b551c0b52f2f5717a633a97d50164440b4`
-- Vercel: hardened intermediate branch deployment has reached READY; exact docs-head deployment/browser smoke remains to be checked
+- Exact responsive-code Quality evidence: run `34914430009`, head `1d82b7e76b85cfb9513f27c35554bb8625e60701` — install, audit, tests, typecheck, lint and build all PASS
+- Responsive TDD evidence: run `34914146370` failed specifically on the inherited `body { min-width: 1280px; }`; the mobile-first shell/grid implementation subsequently passed the full gate
+- Vercel last hardened READY preview: `dpl_HiwwiQ1EwfzD5jxuZAofaa4W8xC6` on intermediate branch code; `/` and `/getting-started/overview` return controlled HTTP 503 recovery pages when Contentful is unavailable, with no error/fatal runtime logs in the checked window
+- Exact-current-head Vercel: BLOCKED BY Hobby build-rate limit; GitHub/Vercel status reports `Deployment rate limited — retry in 24 hours`
 - Production: old `main` production remains untouched
 
 ## T01–T10 CORE TASKS
@@ -32,8 +34,8 @@
 - T06 — DONE — Make search UI literal-text safe and recoverable. Verification: no user-created RegExp, HTTP status checked, stale responses ignored, alert state shown.
 - T07 — DONE — Establish deterministic Node 22 release gate. Verification: frozen Yarn install -> audit -> tests -> typecheck -> lint -> build.
 - T08 — DONE — Patch critical/high framework dependency boundary. Verification: Next `15.5.24`, Next PostCSS resolution `8.5.23`, high/critical production audit green.
-- T09 — IN PROGRESS — Verify exact-current-head Vercel preview and runtime logs. Expected: READY build and no unexpected error/fatal logs.
-- T10 — BLOCKED — Provider-backed browser smoke of real home/article/search data. BLOCKED ONLY BY: valid intended Contentful runtime configuration/data in the target deployment if not already configured there.
+- T09 — BLOCKED — Exact-current-head Vercel preview/browser verification. BLOCKED ONLY BY: Vercel Hobby build-rate window; current Git commit status explicitly reports rate limiting rather than a code/build failure.
+- T10 — BLOCKED — Provider-backed browser smoke of real home/article/search data. BLOCKED ONLY BY: valid intended Contentful runtime configuration/data in the target deployment.
 
 ## I01–I10 IMPROVEMENTS
 
@@ -44,7 +46,7 @@
 - I05 — DONE — Repository-local ESLint config replaces a dead parent-monorepo config dependency.
 - I06 — DONE — Contentful assets are HTTPS/host allowlisted and rendered through `next/image` boundary.
 - I07 — DONE — Modern Next Link semantics and accessibility label for home navigation.
-- I08 — DONE — Repo-accurate README, environment, verification and deployment documentation.
+- I08 — DONE — Mobile-first responsive shell: no forced 1280px body width; topbar/search, navigation, home hero, article content and table of contents collapse to a single-column flow below 900px while desktop layout is retained.
 - I09 — DEFERRED WITH REASON — Remove historical custom Babel/Emotion pipeline and re-enable SWC only in a separate measured UI-stack modernization slice; current build is green and behavior must be preserved.
 - I10 — DEFERRED WITH REASON — Migrate from deprecated `next lint` to direct ESLint CLI before a future Next 16 upgrade; current Next 15 release gate is green.
 
@@ -65,8 +67,7 @@ Feature expansion is intentionally conservative because this repository is a CMS
 
 ## Remaining blockers / next action
 
-1. Obtain/check an exact-current-head Vercel preview after the final documentation commits.
-2. Fetch `/`, a known article route such as `/getting-started/overview`, and inspect runtime error/fatal logs.
-3. If target Contentful credentials are configured, exercise a real search/article flow; otherwise record the provider configuration as the only external product-smoke blocker.
+1. Wait for Vercel Hobby build capacity, then obtain an exact-current-head preview and repeat root/article/search/mobile smoke plus runtime-log review.
+2. Configure/verify the intended Contentful environment only if this starter adaptation is meant to remain a live provider-backed demo; then exercise real home/article/search content.
 
 No merge, production promotion, credential mutation, CMS write, billing change or destructive action has been performed.
