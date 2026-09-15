@@ -1,5 +1,5 @@
 import React from "react";
-import type { GetStaticProps } from "next";
+import type { GetServerSideProps } from "next";
 import { css } from "emotion";
 import Image from "next/image";
 import tokens from "@contentful/f36-tokens";
@@ -20,10 +20,11 @@ import { SCREEN_BREAKPOINT_LARGE } from "../utils/getGridStyles";
 import { getAllCategories, getSiteSettings } from "../lib/api";
 import { Layout } from "../components/Layout";
 import type { SidebarProps } from "../components/Sidebar";
+import type { SiteSettings } from "../types";
 
 const styles = {
   grid: css({
-    flex: 1, // this is necessary to make the footer sticky to the bottom of the page
+    flex: 1,
     padding: `${tokens.spacing3Xl} ${tokens.spacingL} 0`,
     [`@media screen and (min-width: ${SCREEN_BREAKPOINT_LARGE})`]: {
       display: "grid",
@@ -50,9 +51,35 @@ const styles = {
 
 interface HomePageProps {
   sidebarLinks: SidebarProps["links"];
+  siteSettings?: SiteSettings;
+  contentUnavailable: boolean;
 }
 
-export default function Home({ sidebarLinks }: HomePageProps) {
+export default function Home({
+  sidebarLinks,
+  contentUnavailable,
+}: HomePageProps) {
+  if (contentUnavailable) {
+    return (
+      <Layout sidebarLinks={[]}>
+        <article className={styles.grid}>
+          <Flex flexDirection="column" alignItems="flex-start" gap="spacingM">
+            <DisplayText as="h1" size="large">
+              Knowledge base unavailable
+            </DisplayText>
+            <Paragraph>
+              The content service is temporarily unavailable. Reload this page
+              to try again.
+            </Paragraph>
+            <Button as="a" href="/" variant="primary">
+              Try again
+            </Button>
+          </Flex>
+        </article>
+      </Layout>
+    );
+  }
+
   return (
     <Layout sidebarLinks={sidebarLinks}>
       <article className={styles.grid}>
@@ -86,7 +113,7 @@ export default function Home({ sidebarLinks }: HomePageProps) {
 
             <Flex className={styles.sections} gap="spacing2Xl">
               <Flex flexDirection="column" alignItems="flex-start">
-                <Image src={formaSVG} alt="Figma’s logo" />
+                <Image src={formaSVG} alt="Forma36 logo" />
 
                 <Heading marginTop="spacingM">Forma36</Heading>
                 <Paragraph>A design system by Contentful</Paragraph>
@@ -96,7 +123,7 @@ export default function Home({ sidebarLinks }: HomePageProps) {
               </Flex>
 
               <Flex flexDirection="column" alignItems="flex-start">
-                <Image src={nextJsSVG} alt="React’s logo" />
+                <Image src={nextJsSVG} alt="Next.js logo" />
 
                 <Heading marginTop="spacingM">Next.js</Heading>
                 <Paragraph>The React Framework</Paragraph>
@@ -110,7 +137,7 @@ export default function Home({ sidebarLinks }: HomePageProps) {
           <Flex className={styles.imgContainer}>
             <Image
               src={homepageImg}
-              alt="UI components in a browser"
+              alt="Knowledge-base interface illustration"
               layout="responsive"
             />
           </Flex>
@@ -120,14 +147,29 @@ export default function Home({ sidebarLinks }: HomePageProps) {
   );
 }
 
-export const getStaticProps: GetStaticProps = async () => {
-  const sidebarLinks = await getAllCategories();
-  const siteSettings = await getSiteSettings();
+export const getServerSideProps: GetServerSideProps<HomePageProps> = async ({
+  res,
+}) => {
+  try {
+    const [sidebarLinks, siteSettings] = await Promise.all([
+      getAllCategories(),
+      getSiteSettings(),
+    ]);
 
-  return {
-    props: {
-      sidebarLinks,
-      siteSettings,
-    },
-  };
+    return {
+      props: {
+        sidebarLinks,
+        siteSettings,
+        contentUnavailable: false,
+      },
+    };
+  } catch {
+    res.statusCode = 503;
+    return {
+      props: {
+        sidebarLinks: [],
+        contentUnavailable: true,
+      },
+    };
+  }
 };
