@@ -6,11 +6,12 @@
     "dev": "next dev",
     "build": "next build",
     "build:prod": "yarn ts-node scripts/generate-public-files && next build",
-    "prebuild": "yarn ts-node scripts/generate-search-index",
+    "search:index": "ts-node scripts/generate-search-index.ts",
     "start": "next start",
     "test": "node --test tests/*.test.mjs",
     "typecheck": "tsc --noEmit",
-    "check": "yarn test && yarn typecheck"
+    "lint": "next lint --max-warnings=0",
+    "check": "yarn test && yarn typecheck && yarn lint && yarn build"
   },
   "dependencies": {
     "@contentful/f36-components": "^4.10.1",
