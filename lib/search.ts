@@ -1,54 +1,90 @@
 import { documentToPlainTextString } from "@contentful/rich-text-plain-text-renderer";
 import lunr from "lunr";
 
-import { getAllArticles, getSingleArticleBySlug } from "./api";
+import { getAllSearchArticles } from "./api";
 
-interface SearchDocument {
+export interface SearchDocument {
   content: string;
   title: string;
   slug: string;
+  path: string;
 }
 
+export interface SearchData {
+  index: lunr.Index;
+  documents: Record<string, SearchDocument>;
+}
+
+const SEARCH_CACHE_TTL_MS = 5 * 60 * 1000;
+let cachedSearchData: { expiresAt: number; data: SearchData } | null = null;
+let pendingSearchData: Promise<SearchData> | null = null;
+
 function createIndex(documents: SearchDocument[]) {
-  return new Promise<lunr.Index>(function (resolve, reject) {
-    try {
-      const index = lunr(function (builder) {
-        builder.ref("slug");
-        builder.field("title");
-        builder.field("content");
-        builder.metadataWhitelist = ["position"];
+  return lunr(function () {
+    this.ref("slug");
+    this.field("title");
+    this.field("content");
+    this.metadataWhitelist = ["position"];
 
-        documents.forEach((document) => {
-          builder.add(document);
-        });
-      });
-
-      resolve(index);
-    } catch (error) {
-      reject(error);
-    }
+    documents.forEach((document) => {
+      this.add(document);
+    });
   });
 }
 
-export async function buildSearchIndex() {
-  const allArticles = await getAllArticles();
-  let documents: SearchDocument[] = [];
+async function createSearchData(): Promise<SearchData> {
+  const articles = await getAllSearchArticles();
+  const documents = articles
+    .filter(
+      (article) =>
+        article?.slug &&
+        article?.title &&
+        article?.body?.json &&
+        article?.kbAppCategory?.slug,
+    )
+    .map((article): SearchDocument => ({
+      content: documentToPlainTextString(article.body.json),
+      title: article.title,
+      slug: article.slug,
+      path: `/${article.kbAppCategory.slug}/${article.slug}`,
+    }));
 
-  for (const article of allArticles) {
-    const contentfulResult = await getSingleArticleBySlug(article.slug);
-    const text = documentToPlainTextString(contentfulResult.body.json);
+  const documentMap = documents.reduce<Record<string, SearchDocument>>(
+    (accumulator, document) => {
+      accumulator[document.slug] = document;
+      return accumulator;
+    },
+    {},
+  );
 
-    documents = [
-      ...documents,
-      {
-        title: article.title,
-        content: text,
-        slug: article.slug,
-      },
-    ];
+  return {
+    index: createIndex(documents),
+    documents: documentMap,
+  };
+}
+
+export async function getSearchData(): Promise<SearchData> {
+  if (cachedSearchData && Date.now() < cachedSearchData.expiresAt) {
+    return cachedSearchData.data;
   }
 
-  const index = await createIndex(documents);
+  if (!pendingSearchData) {
+    pendingSearchData = createSearchData()
+      .then((data) => {
+        cachedSearchData = {
+          data,
+          expiresAt: Date.now() + SEARCH_CACHE_TTL_MS,
+        };
+        return data;
+      })
+      .finally(() => {
+        pendingSearchData = null;
+      });
+  }
 
-  return index;
+  return pendingSearchData;
+}
+
+export async function buildSearchIndex() {
+  return (await createSearchData()).index;
 }
