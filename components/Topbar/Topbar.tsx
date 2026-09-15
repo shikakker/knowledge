@@ -5,6 +5,7 @@ import tokens from "@contentful/f36-tokens";
 
 import {
   getGridStyles,
+  SCREEN_BREAKPOINT_DESKTOP,
   SCREEN_BREAKPOINT_LARGE,
   TOPBAR_HEIGHT,
 } from "../../utils/getGridStyles";
@@ -14,22 +15,33 @@ import { SearchBox } from "../SearchBox/SearchBox";
 const styles = {
   header: css({
     display: "grid",
+    minHeight: TOPBAR_HEIGHT,
+    padding: `${tokens.spacingS} 0`,
     backgroundColor: tokens.colorWhite,
     color: tokens.blue700,
-    height: TOPBAR_HEIGHT,
     borderBottom: `1px solid ${tokens.gray300}`,
+    rowGap: tokens.spacingS,
+    [`@media screen and (min-width: ${SCREEN_BREAKPOINT_DESKTOP})`]: {
+      height: TOPBAR_HEIGHT,
+      minHeight: TOPBAR_HEIGHT,
+      padding: 0,
+      rowGap: 0,
+    },
   }),
-  navList: css({
-    listStyle: "none",
-    padding: 0,
-    display: "flex",
-    "> li": {
-      marginRight: tokens.spacingXl,
-      fontSize: tokens.fontSizeL,
+  logo: css({
+    minWidth: 0,
+    paddingLeft: tokens.spacingM,
+    [`@media screen and (min-width: ${SCREEN_BREAKPOINT_DESKTOP})`]: {
+      paddingLeft: tokens.spacingXl,
     },
   }),
   searchBox: css({
     gridColumn: 1,
+    minWidth: 0,
+    width: "100%",
+    "> div": {
+      width: "100%",
+    },
     [`@media screen and (min-width: ${SCREEN_BREAKPOINT_LARGE})`]: {
       gridColumnStart: 2,
     },
@@ -45,7 +57,7 @@ export function Topbar() {
       area="topbar"
       className={cx(styles.header, gridStyles.wrapperColumns)}
     >
-      <Flex paddingLeft="spacingXl">
+      <Flex alignItems="center" className={styles.logo}>
         <TopbarLogo />
       </Flex>
 
@@ -57,7 +69,7 @@ export function Topbar() {
           gridStyles.contentColumnsBigScreens
         )}
       >
-        <Flex className={cx(styles.searchBox)}>
+        <Flex className={styles.searchBox}>
           <SearchBox />
         </Flex>
       </Flex>
