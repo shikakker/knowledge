@@ -81,8 +81,20 @@ export default async function handler(
 
   try {
     const { index, documents } = await getSearchData();
-    const escapedQuery = lunr.Query.escape(query);
-    const found = index.search(`${escapedQuery}*`).slice(0, MAX_SEARCH_RESULTS);
+    const searchTerms = lunr
+      .tokenizer(query)
+      .map((token) => token.toString())
+      .filter(Boolean);
+
+    const found = index
+      .query((queryBuilder) => {
+        searchTerms.forEach((term) => {
+          queryBuilder.term(term, {
+            wildcard: lunr.Query.wildcard.TRAILING,
+          });
+        });
+      })
+      .slice(0, MAX_SEARCH_RESULTS);
 
     const matches = found.flatMap((result) => {
       const document = documents[result.ref];
