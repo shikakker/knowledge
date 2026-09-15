@@ -16,7 +16,10 @@ import { ArrowForwardTrimmedIcon } from "@contentful/f36-icons";
 import formaSVG from "../public/images/forma-icon.svg";
 import nextJsSVG from "../public/images/nextjs-icon.svg";
 import homepageImg from "../public/images/homepage-illustration.svg";
-import { SCREEN_BREAKPOINT_LARGE } from "../utils/getGridStyles";
+import {
+  SCREEN_BREAKPOINT_DESKTOP,
+  SCREEN_BREAKPOINT_LARGE,
+} from "../utils/getGridStyles";
 import { getAllCategories, getSiteSettings } from "../lib/api";
 import { Layout } from "../components/Layout";
 import type { SidebarProps } from "../components/Sidebar";
@@ -25,10 +28,14 @@ import type { SiteSettings } from "../types";
 const styles = {
   grid: css({
     flex: 1,
-    padding: `${tokens.spacing3Xl} ${tokens.spacingL} 0`,
+    minWidth: 0,
+    padding: `${tokens.spacing2Xl} ${tokens.spacingM} 0`,
+    [`@media screen and (min-width: ${SCREEN_BREAKPOINT_DESKTOP})`]: {
+      padding: `${tokens.spacing3Xl} ${tokens.spacingL} 0`,
+    },
     [`@media screen and (min-width: ${SCREEN_BREAKPOINT_LARGE})`]: {
       display: "grid",
-      gridTemplateColumns: "1fr 960px 1fr",
+      gridTemplateColumns: "1fr minmax(0, 960px) 1fr",
       gridTemplateRows: "min-content",
     },
     "> *": {
@@ -37,15 +44,27 @@ const styles = {
       },
     },
   }),
+  hero: css({
+    flexDirection: "column",
+    minWidth: 0,
+    width: "100%",
+    [`@media screen and (min-width: ${SCREEN_BREAKPOINT_DESKTOP})`]: {
+      flexDirection: "row",
+    },
+  }),
   sections: css({
+    flexWrap: "wrap",
     "> *": {
       maxWidth: "220px",
+      minWidth: "180px",
     },
   }),
   imgContainer: css({
     flexGrow: 1,
+    width: "100%",
     maxWidth: "680px",
-    "> span": { flexGrow: 1 },
+    minWidth: 0,
+    "> span": { flexGrow: 1, maxWidth: "100%" },
   }),
 };
 
@@ -84,6 +103,7 @@ export default function Home({
     <Layout sidebarLinks={sidebarLinks}>
       <article className={styles.grid}>
         <Flex
+          className={styles.hero}
           justifyContent="space-between"
           alignItems="flex-start"
           gap="spacing2Xl"
