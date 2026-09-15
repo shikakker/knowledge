@@ -19,6 +19,7 @@ export const GlobalStyles = () => {
           box-sizing: border-box;
           margin: 0;
           min-height: 100%;
+          max-width: 100%;
           padding: 0;
         }
 
@@ -27,7 +28,9 @@ export const GlobalStyles = () => {
           font-family: ${tokens.fontStackPrimary};
           font-size: ${tokens.fontSizeM};
           line-height: ${tokens.lineHeightM};
-          min-width: 1280px;
+          margin: 0;
+          max-width: 100%;
+          overflow-wrap: anywhere;
         }
 
         body *::-webkit-scrollbar {
@@ -44,7 +47,8 @@ export const GlobalStyles = () => {
 
         code {
           font-family: ${tokens.fontStackMonospace};
-          white-space: nowrap;
+          white-space: break-spaces;
+          overflow-wrap: anywhere;
           font-weight: ${tokens.fontWeightMedium};
           background-color: ${tokens.gray200};
           font-size: 95%;
@@ -55,6 +59,8 @@ export const GlobalStyles = () => {
 
         pre {
           margin: 0;
+          max-width: 100%;
+          overflow-x: auto;
           white-space: break-spaces;
         }
 
