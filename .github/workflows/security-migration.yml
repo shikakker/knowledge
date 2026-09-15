@@ -30,7 +30,7 @@ jobs:
       - name: Upgrade Next.js and lint boundary
         run: |
           yarn add next@15.5.24 --exact
-          yarn add --dev eslint@8.57.1 @next/eslint-plugin-next@15.5.24 --exact
+          yarn add --dev eslint@8.57.1 eslint-config-next@15.5.24 @next/eslint-plugin-next@15.5.24 --exact
 
       - name: Regression tests
         run: yarn test
