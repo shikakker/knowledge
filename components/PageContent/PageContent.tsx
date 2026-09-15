@@ -6,6 +6,7 @@ import tokens from "@contentful/f36-tokens";
 import type { FrontMatter } from "../../types";
 import {
   getGridStyles,
+  SCREEN_BREAKPOINT_DESKTOP,
   SCREEN_BREAKPOINT_LARGE,
 } from "../../utils/getGridStyles";
 import { TableOfContent, TableOfContentProps } from "./TableOfContent";
@@ -15,12 +16,22 @@ import { RichText } from "../ContentfulRichText";
 
 const styles = {
   grid: css({
-    flex: 1, // this is necessary to make the footer sticky to the bottom of the page
+    flex: 1,
+    minWidth: 0,
     gridAutoRows: "min-content",
     gridTemplateAreas: `
-      "header header"
-      "content toc"
+      "header"
+      "content"
+      "toc"
     `,
+    rowGap: tokens.spacingL,
+    [`@media screen and (min-width: ${SCREEN_BREAKPOINT_DESKTOP})`]: {
+      gridTemplateAreas: `
+        "header header"
+        "content toc"
+      `,
+      rowGap: 0,
+    },
     [`@media screen and (min-width: ${SCREEN_BREAKPOINT_LARGE})`]: {
       gridTemplateAreas: `
         ". header header ."
@@ -30,21 +41,28 @@ const styles = {
   }),
   content: css({
     gridArea: "content",
+    minWidth: 0,
   }),
   article: css({
-    // this style makes sure that the first element of the content doesn't have extra spacing
+    minWidth: 0,
+    overflowWrap: "anywhere",
     "> *:first-child": { marginTop: 0 },
   }),
   tableOfContent: css({
     gridArea: "toc",
     display: "flex",
     flexDirection: "column",
-    position: "sticky",
-    top: tokens.spacing2Xl,
-    paddingLeft: tokens.spacing2Xl,
+    position: "static",
+    paddingTop: tokens.spacingM,
     alignSelf: "start",
     overflowY: "auto",
     overscrollBehavior: "contain",
+    [`@media screen and (min-width: ${SCREEN_BREAKPOINT_DESKTOP})`]: {
+      position: "sticky",
+      top: tokens.spacing2Xl,
+      paddingTop: 0,
+      paddingLeft: tokens.spacing2Xl,
+    },
   }),
 };
 
@@ -76,13 +94,6 @@ export function PageContent({
       <PageContentHeader title={title} />
 
       <Flex flexDirection="column" className={styles.content}>
-        {/**
-         * We need to wrap the text of the page into an element without Grid or Flex
-         * because we want the margins of our headings and paragraphs to collapse
-         * to make it easier to maintain the spacing between the elements
-         * A good article about margin collapse by Josh Comeau:
-         * https://www.joshwcomeau.com/css/rules-of-margin-collapse/#flow-layout-only
-         */}
         <article className={styles.article}>
           {source.richTextBody && (
             <RichText
@@ -94,7 +105,7 @@ export function PageContent({
       </Flex>
 
       {headings.length > 1 && (
-        <nav className={styles.tableOfContent}>
+        <nav className={styles.tableOfContent} aria-label="On this page">
           <TableOfContent headings={headings} />
         </nav>
       )}
