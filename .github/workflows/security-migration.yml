@@ -32,6 +32,22 @@ jobs:
           yarn add next@15.5.24 --exact
           yarn add --dev eslint@8.57.1 eslint-config-next@15.5.24 @next/eslint-plugin-next@15.5.24 --exact
 
+      - name: Migrate topbar link to current Next semantics
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = 'components/Topbar/TopbarLogo.tsx';
+          let source = fs.readFileSync(path, 'utf8');
+          const before = `<Link href="/" passHref>\n      <a className={styles.logoLink} href="/">\n        <Logo />\n      </a>\n    </Link>`;
+          const after = `<Link href="/" className={styles.logoLink} aria-label="Knowledge base home">\n      <Logo />\n    </Link>`;
+          if (!source.includes(before)) {
+            throw new Error('Expected legacy topbar link markup was not found');
+          }
+          source = source.replace(before, after);
+          fs.writeFileSync(path, source);
+          NODE
+
       - name: Regression tests
         run: yarn test
 
@@ -56,15 +72,15 @@ jobs:
             exit 1
           fi
 
-      - name: Commit synchronized dependency files
+      - name: Commit synchronized migration files
         shell: bash
         run: |
-          if git diff --quiet -- package.json yarn.lock; then
-            echo "No dependency changes to commit"
+          if git diff --quiet -- package.json yarn.lock components/Topbar/TopbarLogo.tsx; then
+            echo "No migration changes to commit"
             exit 0
           fi
           git config user.name "Egor Denisov"
           git config user.email "designer.egor@ya.ru"
-          git add package.json yarn.lock
+          git add package.json yarn.lock components/Topbar/TopbarLogo.tsx
           git commit -m "fix: patch Next.js security boundary"
           git push origin HEAD:portfolio-improvements-2026-08
