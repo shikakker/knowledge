@@ -71,3 +71,12 @@ Feature expansion is intentionally conservative because this repository is a CMS
 2. Configure/verify the intended Contentful environment only if this starter adaptation is meant to remain a live provider-backed demo; then exercise real home/article/search content.
 
 No merge, production promotion, credential mutation, CMS write, billing change or destructive action has been performed.
+
+
+## 2026-09-28 autonomous continuation
+
+- Rechecked the hardened CMS/search boundary: no new confirmed P0/P1 was found beyond the existing external Contentful/runtime gates.
+- Previous exact-head Vercel failure was a 24-hour Hobby build-rate limit rather than an application build error.
+- This checkpoint intentionally retriggers exact-head delivery after that rate-limit window has elapsed.
+- Prior exact-head GitHub Quality remains green: frozen install, production audit, 11/11 tests, typecheck, lint, and build PASS.
+- No CMS write, credential mutation, merge, billing action, or production promotion.
