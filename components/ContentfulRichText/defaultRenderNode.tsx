@@ -1,4 +1,5 @@
 import React from "react";
+import Image from "next/image";
 import slugger from "github-slugger";
 
 import {
@@ -14,23 +15,39 @@ import type { Block, Inline, Text } from "@contentful/rich-text-types";
 import type { RenderNode } from "@contentful/rich-text-react-renderer";
 import { CodeBlock } from "./CodeBlock";
 
+const CONTENTFUL_ASSET_HOSTS = new Set([
+  "images.ctfassets.net",
+  "assets.ctfassets.net",
+]);
+
 const getHeadingId = (node: Block | Inline) =>
   slugger.slug((node.content[0] as Text).value, false);
 
+function getSafeAssetUrl(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+
+  try {
+    const url = new URL(value.startsWith("//") ? `https:${value}` : value);
+    if (url.protocol !== "https:" || !CONTENTFUL_ASSET_HOSTS.has(url.hostname)) {
+      return null;
+    }
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
 export function getRenderNode(links): RenderNode {
   const entryMap = new Map();
-  // loop through the block linked entries and add them to the map
   for (const entry of links.entries.block) {
     entryMap.set(entry.sys.id, entry);
   }
 
-  // loop through the hyperlinked entries and add them to the map
   for (const entry of links.entries.hyperlink) {
     entryMap.set(entry.sys.id, entry);
   }
 
   const assetMap = new Map();
-  // loop through the assets and add them to the map
   for (const asset of links.assets.block) {
     assetMap.set(asset.sys.id, asset);
   }
@@ -88,11 +105,18 @@ export function getRenderNode(links): RenderNode {
     ),
     [BLOCKS.EMBEDDED_ASSET]: (node) => {
       const asset = assetMap.get(node.data.target.sys.id);
+      const src = getSafeAssetUrl(asset?.url);
+      if (!src || !Number.isFinite(asset?.width) || !Number.isFinite(asset?.height)) {
+        return null;
+      }
+
       return (
-        <img
-          alt={asset.description}
+        <Image
+          alt={asset.description ?? asset.title ?? "Content image"}
           height={asset.height}
-          src={asset.url}
+          loader={({ src: imageSrc }) => imageSrc}
+          src={src}
+          unoptimized
           width={asset.width}
         />
       );
@@ -100,10 +124,9 @@ export function getRenderNode(links): RenderNode {
     [BLOCKS.EMBEDDED_ENTRY]: (node) => {
       const entry = entryMap.get(node.data.target.sys.id);
       return (
-        <CodeBlock
-          children={entry.code}
-          className={`language-${entry.language ?? "jsx"}`}
-        />
+        <CodeBlock className={`language-${entry.language ?? "jsx"}`}>
+          {entry.code}
+        </CodeBlock>
       );
     },
     [INLINES.HYPERLINK]: (node, children) => {
@@ -118,7 +141,6 @@ export function getRenderNode(links): RenderNode {
       );
     },
     [BLOCKS.TABLE]: (node) => {
-      // The first element in the array is always the table’s header
       const [headerRow, ...bodyRows] = node.content as any[];
 
       return (

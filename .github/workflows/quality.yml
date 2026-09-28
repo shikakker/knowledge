@@ -1,0 +1,36 @@
+name: Quality
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+      - run: yarn install --frozen-lockfile
+      - name: Audit production dependencies
+        shell: bash
+        run: |
+          set +e
+          yarn audit --groups dependencies --json > yarn-audit.json
+          status=$?
+          set -e
+          if (( status & 24 )); then
+            cat yarn-audit.json
+            exit 1
+          fi
+      - run: yarn test
+      - run: yarn typecheck
+      - run: yarn lint
+      - run: yarn build

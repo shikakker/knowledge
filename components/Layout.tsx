@@ -2,7 +2,7 @@ import React from "react";
 import { css, cx } from "emotion";
 import { Grid } from "@contentful/f36-components";
 
-import { getGridStyles, TOPBAR_HEIGHT } from "../utils/getGridStyles";
+import { getGridStyles } from "../utils/getGridStyles";
 import { Topbar } from "./Topbar";
 import { Footer } from "./Footer";
 import { Sidebar } from "./Sidebar";
@@ -12,8 +12,10 @@ const styles = {
   mainItem: css({
     display: "flex",
     flexDirection: "column",
+    minHeight: 0,
+    minWidth: 0,
+    height: "100%",
     overflow: "auto",
-    height: `calc(100vh - ${TOPBAR_HEIGHT})`,
   }),
 };
 
@@ -33,9 +35,8 @@ export function Layout({ children, sidebarLinks }: Props) {
       <Topbar />
       <Sidebar links={sidebarLinks} />
 
-      {/* Unique key for each page, so scroll position is not preserved when opening a new page */}
       <Grid.Item
-        key={'/'}
+        key="/"
         area="content"
         as="main"
         className={styles.mainItem}

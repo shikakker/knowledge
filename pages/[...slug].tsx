@@ -1,10 +1,8 @@
 import React from "react";
-import type { NextPage, GetStaticProps, GetStaticPaths } from "next";
+import type { NextPage, GetServerSideProps } from "next";
 import type { ParsedUrlQuery } from "querystring";
-
-import { useRouter } from "next/router";
-import ErrorPage from "next/error";
 import Head from "next/head";
+import { Button, DisplayText, Flex, Paragraph } from "@contentful/f36-components";
 
 import { getToCFromContentful } from "../utils/tableOfContents";
 import { FrontMatterContextProvider } from "../utils/frontMatterContext";
@@ -12,27 +10,52 @@ import type { PageContentProps } from "../components/PageContent";
 import { PageContent } from "../components/PageContent";
 import {
   getAllCategories,
-  getAllArticles,
   getSingleArticleBySlug,
   getSiteSettings,
 } from "../lib/api";
 import type { SidebarProps } from "../components/Sidebar";
 import { Layout } from "../components/Layout";
+import type { SiteSettings } from "../types";
 
-interface ComponentPageProps extends PageContentProps {
+interface ComponentPageProps extends Partial<PageContentProps> {
   sidebarLinks: SidebarProps["links"];
+  siteSettings?: SiteSettings;
+  contentUnavailable: boolean;
 }
 
 const ComponentPage: NextPage<ComponentPageProps> = ({
+  contentUnavailable,
   frontMatter,
   headings,
   sidebarLinks,
   source,
 }: ComponentPageProps) => {
-  const router = useRouter();
-
-  if (router.isFallback) {
-    return <ErrorPage statusCode={404} />;
+  if (contentUnavailable || !frontMatter || !headings || !source) {
+    return (
+      <Layout sidebarLinks={[]}>
+        <Head>
+          <title>Knowledge base unavailable</title>
+        </Head>
+        <Flex
+          as="article"
+          flexDirection="column"
+          alignItems="flex-start"
+          gap="spacingM"
+          padding="spacing2Xl"
+        >
+          <DisplayText as="h1" size="large">
+            Article unavailable
+          </DisplayText>
+          <Paragraph>
+            The content service is temporarily unavailable. Try this page again
+            in a moment.
+          </Paragraph>
+          <Button as="a" href="/" variant="primary">
+            Return home
+          </Button>
+        </Flex>
+      </Layout>
+    );
   }
 
   return (
@@ -58,54 +81,54 @@ interface Params extends ParsedUrlQuery {
   slug: string[];
 }
 
-export const getStaticProps: GetStaticProps<
+export const getServerSideProps: GetServerSideProps<
   ComponentPageProps,
   Params
-> = async (context) => {
-  const sidebarLinks = await getAllCategories();
-  const siteSettings = await getSiteSettings();
-  const entrySlug = context.params?.slug[context.params?.slug.length - 1];
-  const contentfulResult = await getSingleArticleBySlug(entrySlug);
+> = async ({ params, res }) => {
+  const slugParts = params?.slug;
+  const entrySlug = Array.isArray(slugParts)
+    ? slugParts[slugParts.length - 1]
+    : undefined;
 
-  if (!contentfulResult) {
-    throw new Error(
-      "Could not find an entry in Contentful for: " + context.params?.slug
-    );
+  if (!entrySlug) {
+    return { notFound: true };
   }
 
-  return {
-    props: {
-      headings: getToCFromContentful(contentfulResult.body.json.content),
-      frontMatter: {
-        title: contentfulResult.title,
-      },
-      sidebarLinks,
-      siteSettings,
-      source: {
-        richTextBody: contentfulResult.body.json,
-        richTextLinks: contentfulResult.body.links,
-      },
-    },
-  };
-};
+  try {
+    const [sidebarLinks, siteSettings, contentfulResult] = await Promise.all([
+      getAllCategories(),
+      getSiteSettings(),
+      getSingleArticleBySlug(entrySlug),
+    ]);
 
-export const getStaticPaths: GetStaticPaths<Params> = async () => {
-  const allArticles = await getAllArticles();
+    if (!contentfulResult?.body?.json) {
+      return { notFound: true };
+    }
 
-  // Getting all the paths based on the data from Contentful
-  const contentfulPaths = allArticles.map((item) => {
-    const slug = [item.kbAppCategory.slug, item.slug];
     return {
-      params: {
-        slug,
+      props: {
+        contentUnavailable: false,
+        headings: getToCFromContentful(contentfulResult.body.json.content),
+        frontMatter: {
+          title: contentfulResult.title,
+        },
+        sidebarLinks,
+        siteSettings,
+        source: {
+          richTextBody: contentfulResult.body.json,
+          richTextLinks: contentfulResult.body.links,
+        },
       },
     };
-  });
-
-  return {
-    paths: contentfulPaths,
-    fallback: false,
-  };
+  } catch {
+    res.statusCode = 503;
+    return {
+      props: {
+        sidebarLinks: [],
+        contentUnavailable: true,
+      },
+    };
+  }
 };
 
 export default ComponentPage;

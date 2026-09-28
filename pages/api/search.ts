@@ -1,76 +1,116 @@
 import lunr from "lunr";
 import type { NextApiRequest, NextApiResponse } from "next";
-import { readFile, writeFile } from "fs/promises";
-import path from "path";
-import { documentToPlainTextString } from "@contentful/rich-text-plain-text-renderer";
 
-import { buildSearchIndex } from "../../lib/search";
-import { getSingleArticleBySlug } from "../../lib/api";
+import { getSearchData, SearchDocument } from "../../lib/search";
 
-const truncateContent = async (found: lunr.Index.Result) => {
-  const key = Object.keys(found.matchData?.metadata).find((key) => {
-    return found.matchData.metadata[key].content?.position;
-  });
+const MAX_SEARCH_QUERY_LENGTH = 100;
+const MAX_SEARCH_RESULTS = 20;
 
-  const articleSlug = found.ref;
-  const contentfulResult = await getSingleArticleBySlug(articleSlug);
-  const text = documentToPlainTextString(contentfulResult.body.json);
+type SearchResponse =
+  | Array<{ content: string; title: string; slug: string }>
+  | { error: string };
 
-  if (!key) return text;
-
-  const [index, length] = found.matchData.metadata[key].content.position[0];
-  const startIndex = Math.max(0, index - 15);
-  const truncatedContent = text.slice(startIndex, startIndex + length + 50);
-  let content = truncatedContent;
-
-  if (startIndex + length + 50 < text.length) {
-    content = `${content}…`;
+function parseBody(body: unknown): Record<string, unknown> | null {
+  if (body && typeof body === "object" && !Array.isArray(body)) {
+    return body as Record<string, unknown>;
   }
 
-  if (startIndex > 0) {
-    content = `…${content}`;
-  }
-
-  return {
-    content,
-    title: contentfulResult.title,
-    slug: `/${contentfulResult.kbAppCategory.slug}/${contentfulResult.slug}`,
-  };
-};
-
-export default async function handler(
-  req: NextApiRequest,
-  res: NextApiResponse
-) {
-  const { query } = JSON.parse(req.body);
-  let indexToLoad: lunr.Index | undefined = undefined;
-  let indexFile = path.resolve(process.cwd(), ".cache/searchIndex.json");
+  if (typeof body !== "string") return null;
 
   try {
-    const serializedIndex = await readFile(indexFile, "utf-8");
-    indexToLoad = JSON.parse(serializedIndex) as lunr.Index;
-  } catch (error) {
-    // Recreate index for local development
-    if (process.env.NODE_ENV === "development") {
-      indexToLoad = await buildSearchIndex();
-      const serializedIndex = JSON.stringify(indexToLoad);
+    const parsed = JSON.parse(body);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
 
-      await writeFile(indexFile, serializedIndex, "utf-8");
+function createSnippet(found: lunr.Index.Result, document: SearchDocument) {
+  const metadata = found.matchData?.metadata ?? {};
+  let position: [number, number] | undefined;
+
+  for (const term of Object.values(metadata)) {
+    const positions = term.content?.position;
+    if (positions?.length) {
+      position = positions[0] as [number, number];
+      break;
     }
   }
 
-  if (!indexToLoad) {
-    throw new Error("Failed to load search index file");
+  if (!position) {
+    return document.content.slice(0, 120);
   }
 
-  const index = lunr.Index.load(indexToLoad);
-  const found = index.search(`${query}*`);
-  let matches: any[] = [];
+  const [index, length] = position;
+  const startIndex = Math.max(0, index - 15);
+  const endIndex = Math.min(document.content.length, startIndex + length + 80);
+  let content = document.content.slice(startIndex, endIndex);
 
-  for (const result of found) {
-    const match = await truncateContent(result);
-    matches = [...matches, match];
+  if (startIndex > 0) content = `…${content}`;
+  if (endIndex < document.content.length) content = `${content}…`;
+
+  return content;
+}
+
+export default async function handler(
+  req: NextApiRequest,
+  res: NextApiResponse<SearchResponse>,
+) {
+  res.setHeader("Cache-Control", "no-store");
+
+  if (req.method !== "POST") {
+    res.setHeader("Allow", ["POST"]);
+    res.status(405).json({ error: "METHOD_NOT_ALLOWED" });
+    return;
   }
 
-  res.status(200).json(matches);
+  const body = parseBody(req.body);
+  const rawQuery = body?.query;
+  if (typeof rawQuery !== "string" || !rawQuery.trim()) {
+    res.status(400).json({ error: "SEARCH_QUERY_REQUIRED" });
+    return;
+  }
+
+  const query = rawQuery.trim();
+  if (query.length > MAX_SEARCH_QUERY_LENGTH) {
+    res.status(400).json({ error: "SEARCH_QUERY_TOO_LONG" });
+    return;
+  }
+
+  try {
+    const { index, documents } = await getSearchData();
+    const searchTerms = lunr
+      .tokenizer(query)
+      .map((token) => token.toString())
+      .filter(Boolean);
+
+    const found = index
+      .query((queryBuilder) => {
+        searchTerms.forEach((term) => {
+          queryBuilder.term(term, {
+            wildcard: lunr.Query.wildcard.TRAILING,
+          });
+        });
+      })
+      .slice(0, MAX_SEARCH_RESULTS);
+
+    const matches = found.flatMap((result) => {
+      const document = documents[result.ref];
+      if (!document) return [];
+
+      return [
+        {
+          content: createSnippet(result, document),
+          title: document.title,
+          slug: document.path,
+        },
+      ];
+    });
+
+    res.status(200).json(matches);
+  } catch {
+    res.status(503).json({ error: "SEARCH_UNAVAILABLE" });
+  }
 }
